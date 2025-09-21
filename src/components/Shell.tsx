@@ -23,7 +23,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         <strong>Shop POS</strong>
         <nav style={{ display: 'flex', gap: 10 }}>
           <Link href="/">Dashboard</Link>
-          <Link href="/sales">Sales</Link>
+          <Link href="/sales/listSales">listSales</Link>
+          <Link href="/sales/newSales">newSales</Link>
           <Link href="/reports/today">Today</Link>
         </nav>
         <div style={{ marginLeft: 'auto' }}>
