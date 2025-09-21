@@ -1,73 +1,182 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { getToken } from '@/lib/session';
+import { useEffect, useRef, useState } from 'react';
 import { apiGet } from '@/lib/api-client';
+import { getToken } from '@/lib/token';
 
 type Customer = { id: string; name: string; phone?: string | null };
 
 type Props = {
-  value: string | null;
-  onChange: (id: string | null, customer?: Customer | null) => void;
+  value: Customer | null;                 // selected
+  onChange: (c: Customer | null) => void; // notify parent
+  placeholder?: string;
 };
 
-export default function CustomerSelect({ value, onChange }: Props) {
-  const [q, setQ] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [rows, setRows] = useState<Customer[]>([]);
+export default function CustomerSelect({ value, onChange, placeholder = 'Search customer...' }: Props) {
   const token = getToken() || undefined;
 
-  // simple debounce
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<Customer[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string>('');
+
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const timerRef = useRef<any>(null);
+
+  // Close dropdown when clicking outside
   useEffect(() => {
-    const t = setTimeout(async () => {
-      setLoading(true);
+    const onDocClick = (e: MouseEvent) => {
+      if (!boxRef.current) return;
+      if (!boxRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, []);
+
+  // Debounced search (min 2 chars)
+  useEffect(() => {
+    if (!open) return;
+    if (timerRef.current) clearTimeout(timerRef.current);
+
+    timerRef.current = setTimeout(async () => {
+      const q = query.trim();
+      if (q.length < 2) {
+        setResults([]);
+        setErr('');
+        return;
+      }
       try {
-        const resp = await apiGet<{ ok: boolean; data: Customer[]; total: number }>(
-          `/api/customers?q=${encodeURIComponent(q)}`, token
+        setLoading(true);
+        setErr('');
+        const resp = await apiGet<{ ok: boolean; data: any[]; total: number }>(
+          `/api/customers?q=${encodeURIComponent(q)}&limit=10`,
+          token
         );
-        setRows(resp.data || []);
-      } catch (e) {
-        setRows([]);
+        const items: Customer[] = (resp.data || []).map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          phone: c.phone ?? '',
+        }));
+        setResults(items);
+      } catch (e: any) {
+        setErr(e?.message || 'Search failed');
+        setResults([]);
       } finally {
         setLoading(false);
       }
     }, 250);
-    return () => clearTimeout(t);
-  }, [q, token]);
 
-  const selected = useMemo(() => rows.find(r => r.id === value) || null, [rows, value]);
+    return () => timerRef.current && clearTimeout(timerRef.current);
+  }, [query, open, token]);
+
+  function select(c: Customer) {
+    onChange(c);
+    setOpen(false);
+    setQuery(''); // reset input text
+    setResults([]);
+  }
+
+  function clear() {
+    onChange(null);
+  }
 
   return (
-    <div style={{ display:'grid', gap: 6 }}>
-      <label style={{ fontSize: 12, color: '#555' }}>Customer</label>
-      <input
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder="Search name/phone…"
-        style={{ border:'1px solid #ddd', padding: 8, borderRadius: 6 }}
-      />
-      {loading && <div style={{ fontSize: 12, color:'#999' }}>Searching…</div>}
-      <div style={{ border:'1px solid #eee', borderRadius: 6, maxHeight: 160, overflow:'auto' }}>
-        {rows.map(c => (
-          <div
-            key={c.id}
-            onClick={() => onChange(c.id, c)}
+    <div ref={boxRef} style={{ position: 'relative', display: 'grid', gap: 8 }}>
+      {/* Always-visible search input */}
+      <div>
+        <label style={{ fontSize: 12, color: '#555' }}>Customer</label>
+        <input
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            if (!open) setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          placeholder={placeholder}
+          style={{ width: '100%', border: '1px solid #ddd', padding: 8, borderRadius: 8 }}
+        />
+      </div>
+
+      {/* Dropdown */}
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            zIndex: 20,
+            top: '68px',
+            left: 0,
+            right: 0,
+            border: '1px solid #eee',
+            borderRadius: 8,
+            background: 'white',
+            boxShadow: '0 6px 24px rgba(0,0,0,0.06)',
+            maxHeight: 280,
+            overflowY: 'auto',
+          }}
+        >
+          {loading ? (
+            <div style={{ padding: 10, color: '#666' }}>Searching…</div>
+          ) : err ? (
+            <div style={{ padding: 10, color: '#b00' }}>{err}</div>
+          ) : query.trim().length < 2 ? (
+            <div style={{ padding: 10, color: '#999' }}>Type at least 2 characters…</div>
+          ) : results.length === 0 ? (
+            <div style={{ padding: 10, color: '#999' }}>No matches</div>
+          ) : (
+            results.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => select(c)}
+                style={{
+                  width: '100%',
+                  textAlign: 'left',
+                  padding: '8px 10px',
+                  border: 'none',
+                  borderBottom: '1px solid #f5f5f5',
+                  background: 'white',
+                  cursor: 'pointer',
+                }}
+              >
+                <div style={{ fontWeight: 600 }}>{c.name}</div>
+                {c.phone ? <div style={{ fontSize: 12, color: '#666' }}>{c.phone}</div> : null}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* Selected pill BELOW the input */}
+      {value && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '8px 10px',
+            border: '1px solid #ddd',
+            borderRadius: 8,
+            background: '#fafafa',
+          }}
+        >
+          <div>
+            <div style={{ fontWeight: 600 }}>{value.name}</div>
+            {value.phone ? <div style={{ fontSize: 12, color: '#666' }}>{value.phone}</div> : null}
+          </div>
+          <button
+            onClick={clear}
+            title="Clear"
             style={{
-              padding: 8,
+              marginLeft: 'auto',
+              border: '1px solid #ddd',
+              background: 'white',
+              borderRadius: 6,
+              padding: '4px 8px',
               cursor: 'pointer',
-              background: c.id === value ? '#f0f7ff' : 'transparent',
-              borderBottom: '1px solid #f4f4f4'
             }}
           >
-            <div style={{ fontWeight: 600 }}>{c.name}</div>
-            <div style={{ fontSize: 12, color:'#666' }}>{c.phone || ''}</div>
-          </div>
-        ))}
-        {!loading && rows.length === 0 && <div style={{ padding: 8, fontSize: 12, color:'#888' }}>No results</div>}
-      </div>
-      {selected && (
-        <div style={{ fontSize: 12, color:'#333' }}>
-          Selected: <strong>{selected.name}</strong>
+            ×
+          </button>
         </div>
       )}
     </div>

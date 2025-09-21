@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getToken, getShopId } from '@/lib/session';
+import { getToken } from '@/lib/token'; // ← make sure this path is correct
 import { apiGet, apiPost } from '@/lib/api-client';
-import CustomerSelect from '@/components/sales/CustomerSelect';
+import CustomerPicker from '@/components/sales/CustomerSelect'; // your component exports default
 import ProductPicker from '@/components/sales/ProductPicker';
 
 type Device = { id: string; label: string };
@@ -13,12 +13,23 @@ type Store = { id: string; name: string; type: string };
 type Currency = { code: 'USD'|'SOS'; name: string };
 type Account = { id: string; name: string; AccountType?: { name: string } };
 
+type Customer = { id: string; name: string; phone?: string | null };
 type Line = { product_id: string; qty: number; unit_price_usd: number };
+
+// If you stored shop_id somewhere else, adapt this:
+function getShopIdFromJWT(token: string | null): string {
+  try {
+    if (!token) return '';
+    const [, payload] = token.split('.');
+    const json = JSON.parse(atob(payload));
+    return json?.shop_id || '';
+  } catch { return ''; }
+}
 
 export default function NewSalePage() {
   const router = useRouter();
-  const token = getToken() || undefined;
-  const shop_id = getShopId() || '';
+  const token = getToken() || null;
+  const shop_id = getShopIdFromJWT(token);
 
   const [devices, setDevices] = useState<Device[]>([]);
   const [sessions, setSessions] = useState<CashSession[]>([]);
@@ -29,12 +40,12 @@ export default function NewSalePage() {
   const [deviceId, setDeviceId] = useState<string>('');
   const [sessionId, setSessionId] = useState<string>('');
   const [storeId, setStoreId] = useState<string>('');
-  const [customerId, setCustomerId] = useState<string | null>(null);
+  const [customer, setCustomer] = useState<Customer | null>(null); // ← object, not id
 
   const [lines, setLines] = useState<Line[]>([]);
 
   const [currency, setCurrency] = useState<'USD'|'SOS'>('USD');
-  const [methodAccountId, setMethodAccountId] = useState<string>(''); // pick an account (Cash_USD, Cash_SOS, EVC wallet…)
+  const [methodAccountId, setMethodAccountId] = useState<string>('');
   const [amountPaidUsd, setAmountPaidUsd] = useState<number>(0);
   const [sosRate, setSosRate] = useState<number>(27000);
 
@@ -46,28 +57,26 @@ export default function NewSalePage() {
     (async () => {
       try {
         const [dev, ses, st, cur, acc] = await Promise.all([
-          apiGet<{ ok: boolean; data: any[]; total: number }>('/api/devices', token),
-          apiGet<any[]>('/api/cash-sessions', token),
-          apiGet<any[]>('/api/stores', token),
-          apiGet<{ ok: boolean; currencies: Currency[] }>('/api/currencies', token),
-          apiGet<{ ok: boolean; data: Account[]; total: number }>('/api/accounts?limit=200', token),
+          apiGet<{ ok: boolean; data: any[]; total: number }>('/api/devices', token || undefined),
+          apiGet<any[]>('/api/cash-sessions', token || undefined),
+          apiGet<any[]>('/api/stores', token || undefined),
+          apiGet<{ ok: boolean; currencies: Currency[] }>('/api/currencies', token || undefined),
+          apiGet<{ ok: boolean; data: Account[]; total: number }>('/api/accounts?limit=200', token || undefined),
         ]);
 
         setDevices((dev.data || []).map(d => ({ id: d.id, label: d.label })));
         setSessions(ses || []);
         setStores(st || []);
         setCurrs(cur.currencies || []);
-        setAccounts((acc.data || []));
+        setAccounts(acc.data || []);
 
-        // sensible defaults
         if (!deviceId && dev.data?.[0]) setDeviceId(dev.data[0].id);
         if (!storeId && st?.[0]) setStoreId(st[0].id);
 
-        // choose an open session for selected device if possible
-        const openForDevice = (ses || []).find((s: CashSession) => s.device_id === (dev.data?.[0]?.id || '') && !s.closed_at);
+        const firstDevice = dev.data?.[0]?.id || '';
+        const openForDevice = (ses || []).find((s: CashSession) => s.device_id === firstDevice && !s.closed_at);
         if (!sessionId && openForDevice) setSessionId(openForDevice.id);
 
-        // default payment method: first CASH_ON_HAND account that matches currency
         const defaultCash =
           (acc.data || []).find(a =>
             a.AccountType?.name === 'CASH_ON_HAND' &&
@@ -81,7 +90,7 @@ export default function NewSalePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // re-pick a default cash account when currency changes
+  // re-pick default cash account when currency changes
   useEffect(() => {
     const pick =
       accounts.find(a =>
@@ -91,22 +100,21 @@ export default function NewSalePage() {
     if (pick) setMethodAccountId(pick.id);
   }, [currency, accounts]);
 
-  const totalUsd = useMemo(() =>
-    lines.reduce((s, l) => s + (Number(l.qty) * Number(l.unit_price_usd)), 0),
-  [lines]);
+  const totalUsd = useMemo(
+    () => lines.reduce((s, l) => s + (Number(l.qty) * Number(l.unit_price_usd)), 0),
+    [lines]
+  );
 
   async function submit() {
     setMsg('');
-    if (!shop_id) return setMsg('No shop_id (store it at login).');
+    if (!shop_id) return setMsg('No shop_id (not found in token).');
     if (!deviceId || !sessionId || !storeId) return setMsg('Select device, cash session, and store.');
-    if (!customerId) return setMsg('Pick a customer.');
+    if (!customer) return setMsg('Pick a customer.');
     if (lines.length === 0) return setMsg('Add at least one product line.');
 
     setBusy(true);
     try {
-      // derive method string from selected account name (very simple):
       const acct = accounts.find(a => a.id === methodAccountId);
-      // back-end expects method like CASH_USD/CASH_SOS or BANK; we map by account name
       const method =
         /USD/i.test(acct?.name || '') ? 'CASH_USD'
         : /SOS/i.test(acct?.name || '') ? 'CASH_SOS'
@@ -117,7 +125,7 @@ export default function NewSalePage() {
         device_id: deviceId,
         cash_session_id: sessionId,
         store_id: storeId,
-        customer_id: customerId,
+        customer_id: customer.id, // ← from selected object
         lines: lines.map(l => ({
           product_id: l.product_id,
           qty: Number(l.qty),
@@ -132,12 +140,12 @@ export default function NewSalePage() {
         status: 'COMPLETED',
       };
 
-      const resp = await apiPost<any>('/api/sales', body, token);
+      const resp = await apiPost<any>('/api/sales', body, token || undefined);
       setMsg(`✅ Sale created: ${resp.sale?.id || resp.sale_id}`);
-      // go to sale detail, or back to sales list
-      // router.push(`/sales/${resp.sale?.id || resp.sale_id}`);
+      // Reset form minimal:
       setLines([]);
       setAmountPaidUsd(0);
+      setCustomer(null);
     } catch (e: any) {
       setMsg(`❌ ${e.message || 'Failed to create sale'}`);
     } finally {
@@ -164,12 +172,10 @@ export default function NewSalePage() {
           <label style={{ fontSize: 12, color:'#555' }}>Cash session</label>
           <select value={sessionId} onChange={(e) => setSessionId(e.target.value)}>
             <option value="">Select session…</option>
-            {sessions
-              .filter(s => !s.closed_at)
-              .map(s => (
-                <option key={s.id} value={s.id}>
-                  {new Date(s.opened_at).toLocaleString()}
-                </option>
+            {sessions.filter(s => !s.closed_at).map(s => (
+              <option key={s.id} value={s.id}>
+                {new Date(s.opened_at).toLocaleString()}
+              </option>
             ))}
           </select>
         </div>
@@ -182,11 +188,11 @@ export default function NewSalePage() {
         </div>
       </div>
 
-      {/* Customer */}
-      <CustomerSelect
-        value={customerId}
-        onChange={(id) => setCustomerId(id)}
-      />
+      {/* Customer (expects Customer object) */}
+      <div>
+        <label style={{ fontSize: 12, color:'#555' }}>Customer</label>
+        <CustomerPicker value={customer} onChange={setCustomer} />
+      </div>
 
       {/* Products */}
       <ProductPicker value={lines} onChange={setLines} />
