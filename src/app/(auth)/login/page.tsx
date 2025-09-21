@@ -37,7 +37,9 @@ export default function LoginPage() {
 
       // ✅ save token directly into localStorage
       localStorage.setItem('token', json.token);
-
+      localStorage.setItem('shop_id', json.user.shop_id);
+      localStorage.setItem('user_id', json.user.id);
+ 
       setMsg('✅ Logged in successfully!');
 
       // ✅ redirect to ?next=... or home
