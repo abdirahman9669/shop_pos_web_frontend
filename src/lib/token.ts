@@ -1,17 +1,17 @@
-// 'use client' because localStorage is browser-only
-'use client';
+// 'use client';
+export const TOKEN_KEY = 'auth_token';
 
-const KEY = 'pos_token';
-
-export function setToken(token: string) {
-  try { localStorage.setItem(KEY, token); } catch {}
+export function getToken(): string {
+  if (typeof window === 'undefined') return '';
+  return localStorage.getItem(TOKEN_KEY) || '';
 }
 
-export function getToken(): string | null {
-  try { return localStorage.getItem(KEY); } catch {}
-  return null;
+export function setToken(token: string) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(TOKEN_KEY, token);
 }
 
 export function clearToken() {
-  try { localStorage.removeItem(KEY); } catch {}
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(TOKEN_KEY);
 }

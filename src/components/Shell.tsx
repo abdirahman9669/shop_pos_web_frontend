@@ -1,18 +1,40 @@
 'use client';
 
 import Link from 'next/link';
+import { clearToken, getToken } from '@/lib/token';
+import { useRouter } from 'next/navigation';
 
 export default function Shell({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+
+  function logout() {
+    clearToken();
+    router.replace('/login');
+  }
+
+  const loggedIn = !!getToken();
+
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', fontFamily: 'sans-serif' }}>
-      <aside style={{ width: 220, borderRight: '1px solid #eee', padding: 16 }}>
-        <div style={{ fontWeight: 700, marginBottom: 12 }}>Shop POS</div>
-        <nav style={{ display: 'grid', gap: 8 }}>
+    <div style={{ minHeight: '100vh', fontFamily: 'system-ui' }}>
+      <header style={{
+        display: 'flex', gap: 12, alignItems: 'center',
+        padding: '12px 16px', borderBottom: '1px solid #eee'
+      }}>
+        <strong>Shop POS</strong>
+        <nav style={{ display: 'flex', gap: 10 }}>
           <Link href="/">Dashboard</Link>
-          <Link href="/login">Login</Link>
+          <Link href="/sales">Sales</Link>
+          <Link href="/reports/today">Today</Link>
         </nav>
-      </aside>
-      <main style={{ flex: 1, padding: 24 }}>{children}</main>
+        <div style={{ marginLeft: 'auto' }}>
+          {loggedIn && (
+            <button onClick={logout} style={{ padding: '6px 10px', border: '1px solid #ddd', borderRadius: 6 }}>
+              Logout
+            </button>
+          )}
+        </div>
+      </header>
+      <main style={{ padding: 16 }}>{children}</main>
     </div>
   );
 }

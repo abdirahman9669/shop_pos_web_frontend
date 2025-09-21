@@ -1,9 +1,22 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { setToken, clearToken, getToken } from '@/lib/token';
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:5000';
+
+type LoginResp = {
+  ok: boolean;
+  token: string;
+  user: { id: string; username: string; role: string; shop_id: string };
+  shop: { id: string; name: string; slug: string };
+};
+
 export default function LoginPage() {
+  const router = useRouter();                 // ✅ inside component
+  const sp = useSearchParams();               // ✅ inside component
+
   const [username, setU] = useState('owner');
   const [password, setP] = useState('owner123');
   const [msg, setMsg] = useState('');
@@ -13,28 +26,23 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     setMsg('');
-
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:5000'}/api/auth/login`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password }),
-        }
-      );
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const json = (await res.json()) as LoginResp;
+      if (!res.ok || !json.ok) throw new Error((json as any).error || 'Login failed');
 
-      const json = await res.json();
-
-      if (!res.ok || !json.ok) {
-        throw new Error(json.error || 'Login failed');
-      }
-
-      // store JWT from backend
       setToken(json.token);
       setMsg('✅ Logged in successfully. Token saved.');
+
+      // optional: redirect to ?next=/... or to home
+      const next = sp.get('next') || '/';
+      router.replace(next);
     } catch (err: any) {
-      setMsg(`❌ ${err.message}`);
+      setMsg(`❌ ${err.message || 'Login failed'}`);
     } finally {
       setLoading(false);
     }
@@ -75,15 +83,12 @@ export default function LoginPage() {
       </form>
 
       <div style={{ marginTop: 12 }}>
-        <button
-          onClick={onLogout}
-          style={{ padding: 8, borderRadius: 4, border: '1px solid #ccc' }}
-        >
+        <button onClick={onLogout} style={{ padding: 8, borderRadius: 4, border: '1px solid #ccc' }}>
           Logout
         </button>
       </div>
 
-      <div style={{ marginTop: 12, fontSize: 12, color: '#666' }}>
+      <div style={{ marginTop: 12, fontSize: 12, color: '#666', wordBreak: 'break-all' }}>
         Current token: <code>{getToken() || '(none)'}</code>
       </div>
     </div>
