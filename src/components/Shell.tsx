@@ -3,16 +3,28 @@
 import Link from 'next/link';
 import { clearToken, getToken } from '@/lib/token';
 import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
 export default function Shell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const [loggedIn, setLoggedIn] = useState(false);
+
+  useEffect(() => {
+    const check = () => setLoggedIn(!!getToken());
+    check(); // initial
+    // react to localStorage changes (other tabs) and our custom event
+    window.addEventListener('storage', check);
+    window.addEventListener('auth:changed', check);
+    return () => {
+      window.removeEventListener('storage', check);
+      window.removeEventListener('auth:changed', check);
+    };
+  }, []);
 
   function logout() {
     clearToken();
     router.replace('/login');
   }
-
-  const loggedIn = !!getToken();
 
   return (
     <div style={{ minHeight: '100vh', fontFamily: 'system-ui' }}>
@@ -23,8 +35,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         <strong>Shop POS</strong>
         <nav style={{ display: 'flex', gap: 10 }}>
           <Link href="/">Dashboard</Link>
-          <Link href="/sales/listSales">listSales</Link>
-          <Link href="/sales/newSales">newSales</Link>
+          <Link href="/sales/list">listSales</Link>
+          <Link href="/sales/new">newSales</Link>
           <Link href="/reports/today">Today</Link>
         </nav>
         <div style={{ marginLeft: 'auto' }}>

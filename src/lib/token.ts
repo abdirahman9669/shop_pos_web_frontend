@@ -1,17 +1,17 @@
-// 'use client';
-export const TOKEN_KEY = 'auth_token';
-
+// src/lib/token.ts
 export function getToken(): string {
   if (typeof window === 'undefined') return '';
-  return localStorage.getItem(TOKEN_KEY) || '';
+  return localStorage.getItem('token') || '';
 }
 
 export function setToken(token: string) {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem('token', token);
+  window.dispatchEvent(new Event('auth:changed'));   // 🔔 notify listeners
 }
 
 export function clearToken() {
   if (typeof window === 'undefined') return;
-  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem('token');
+  window.dispatchEvent(new Event('auth:changed'));   // 🔔 notify listeners
 }

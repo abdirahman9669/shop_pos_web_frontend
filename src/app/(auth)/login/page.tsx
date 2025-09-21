@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { setToken, clearToken, getToken } from '@/lib/token';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:5000';
 
@@ -14,8 +13,8 @@ type LoginResp = {
 };
 
 export default function LoginPage() {
-  const router = useRouter();                 // ✅ inside component
-  const sp = useSearchParams();               // ✅ inside component
+  const router = useRouter();
+  const sp = useSearchParams();
 
   const [username, setU] = useState('owner');
   const [password, setP] = useState('owner123');
@@ -33,12 +32,15 @@ export default function LoginPage() {
         body: JSON.stringify({ username, password }),
       });
       const json = (await res.json()) as LoginResp;
+
       if (!res.ok || !json.ok) throw new Error((json as any).error || 'Login failed');
 
-      setToken(json.token);
-      setMsg('✅ Logged in successfully. Token saved.');
+      // ✅ save token directly into localStorage
+      localStorage.setItem('token', json.token);
 
-      // optional: redirect to ?next=/... or to home
+      setMsg('✅ Logged in successfully!');
+
+      // ✅ redirect to ?next=... or home
       const next = sp.get('next') || '/';
       router.replace(next);
     } catch (err: any) {
@@ -49,12 +51,12 @@ export default function LoginPage() {
   }
 
   function onLogout() {
-    clearToken();
+    localStorage.removeItem('token');
     setMsg('Logged out (token cleared).');
   }
 
   return (
-    <div style={{ maxWidth: 360 }}>
+    <div style={{ maxWidth: 360, margin: '40px auto', fontFamily: 'system-ui' }}>
       <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 16 }}>Login</h1>
 
       {msg && <div style={{ marginBottom: 12 }}>{msg}</div>}
@@ -83,13 +85,16 @@ export default function LoginPage() {
       </form>
 
       <div style={{ marginTop: 12 }}>
-        <button onClick={onLogout} style={{ padding: 8, borderRadius: 4, border: '1px solid #ccc' }}>
+        <button
+          onClick={onLogout}
+          style={{ padding: 8, borderRadius: 4, border: '1px solid #ccc' }}
+        >
           Logout
         </button>
       </div>
 
       <div style={{ marginTop: 12, fontSize: 12, color: '#666', wordBreak: 'break-all' }}>
-        Current token: <code>{getToken() || '(none)'}</code>
+        Current token: <code>{localStorage.getItem('token') || '(none)'}</code>
       </div>
     </div>
   );
